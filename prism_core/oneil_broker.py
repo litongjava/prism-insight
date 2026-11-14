@@ -110,6 +110,9 @@ class OneilBroker:
         raise ValueError("BROKER_PAGE_LIMIT")
 
     async def holdings(self, symbol):
+        if getattr(self.service, "broker_name", None) == "MOOMOO":
+            from prism_core.moomoo_evidence import holdings
+            return await asyncio.to_thread(holdings, self.service, symbol)
         result = dict(status="UNKNOWN", account_id=self.service.account_key, symbol=symbol,
                       quantity=None, observed_at=_now())
         try:
@@ -132,6 +135,13 @@ class OneilBroker:
     async def discover_order_date(self, intent, broker_order_id):
         """Query a bounded market-local date range; return only the broker row date."""
         self._check(intent)
+        if getattr(self.service, "broker_name", None) == "MOOMOO":
+            from prism_core.moomoo_evidence import exact_order
+            try:
+                row = await asyncio.to_thread(exact_order, self.service, intent, broker_order_id)
+                return row["order_date"]
+            except Exception:
+                return None
         try:
             created = datetime.fromisoformat(intent.created_at.replace("Z", "+00:00"))
             if created.tzinfo is None:
@@ -159,6 +169,9 @@ class OneilBroker:
 
     async def reconcile(self, intent, broker_order_id, order_date=None):
         self._check(intent)
+        if getattr(self.service, "broker_name", None) == "MOOMOO":
+            from prism_core.moomoo_evidence import reconcile
+            return await asyncio.to_thread(reconcile, self.service, intent, broker_order_id, order_date)
         result = dict(status="UNKNOWN", broker_order_id=str(broker_order_id), order_date=order_date,
                       broker_order_date=order_date, intent_id=intent.id, virtual=False,
                       account_id=intent.account_id, symbol=intent.symbol, side=intent.side,
