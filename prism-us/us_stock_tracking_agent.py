@@ -1077,6 +1077,9 @@ class USStockTrackingAgent:
         isolated = getattr(self, "_isolated_runtime", None)
         if isolated is not None:
             return isolated.accounts()
+        from prism_core.us_broker import us_broker, moomoo_accounts
+        if us_broker() == "moomoo":
+            return moomoo_accounts()
         ka = _get_kis_auth()
 
         default_mode = str(ka.getEnv().get("default_mode", "demo")).strip().lower()
@@ -1105,6 +1108,8 @@ class USStockTrackingAgent:
         if not account_key:
             return account_name
 
+        if account.get("broker") == "MOOMOO":
+            return f"{account_name} (moomoo:{account.get('mode', 'unknown')}:****)"
         ka = _get_kis_auth()
 
         parts = account_key.split(":")

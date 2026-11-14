@@ -46,6 +46,9 @@ def _accounts(market: str) -> dict[str, dict]:
     if market == "KR":
         from trading import kis_auth as ka
     else:
+        from prism_core.us_broker import us_broker, moomoo_accounts
+        if us_broker() == "moomoo":
+            return {account["account_key"]: account for account in moomoo_accounts()}
         sys.path.insert(0, str(ROOT / "trading"))
         import kis_auth as ka  # the module prism-us/trading/us_stock_trading.py uses
     return {account["account_key"]: account for account in ka.get_configured_accounts()}
@@ -73,6 +76,10 @@ async def _account_rows(market, account, day, service_factory=_service):
             if getattr(service, "account_key", None) != account["account_key"]:
                 return False, [], "ACCOUNT_SCOPE_MISMATCH"
             start, end = _query_range(market, day)
+            if getattr(service, "broker_name", None) == "MOOMOO":
+                from prism_core.moomoo_evidence import normalized_daily_rows
+                rows = await asyncio.to_thread(normalized_daily_rows, service, start, end)
+                return True, rows, None
             ok, raw = await asyncio.to_thread(service.get_daily_executions_checked, start, end)
     except Exception as error:  # noqa: BLE001 - an inquiry failure is MISSING, not a fill result
         logger.warning("[FILL_RECONCILE][%s] inquiry unavailable: %s", market, type(error).__name__)
@@ -115,6 +122,9 @@ async def run(market, day, *, db_path, dry_run=False, state_path=None, accounts=
             ok, rows, reason = await _account_rows(market, account, day, service_factory)
         profile = execution_profile_ref(account_key)
         for target in group:
+            is_moomoo = account_key.startswith("moomoo:")
+            if is_moomoo:
+                target = dict(target, broker="MOOMOO")
             result = fr.reconcile_target(target, rows, market=market, authoritative=ok, reason=reason)
             attributes = fr.build_attributes(target, result, market=market, execution_profile_ref=profile)
             status = result["fill_status"]

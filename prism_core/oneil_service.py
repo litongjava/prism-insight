@@ -31,6 +31,9 @@ def regular_session(now):
 
 def configured_accounts():
     # Same normalized account definitions as the existing US tracking agent.
+    from prism_core.us_broker import us_broker, moomoo_accounts
+    if us_broker() == "moomoo":
+        return moomoo_accounts()
     from trading import kis_auth
     mode = str(kis_auth.getEnv().get("default_mode", "demo")).strip().lower()
     return kis_auth.get_configured_accounts(svr="vps" if mode == "demo" else "prod", market="us")

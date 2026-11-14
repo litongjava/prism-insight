@@ -1,0 +1,2 @@
+# Optional US execution provider; install alongside the project requirements.
+moomoo-api==10.12.7208
