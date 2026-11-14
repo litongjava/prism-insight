@@ -98,6 +98,10 @@ def expire_old_orders(conn: sqlite3.Connection, today_str: str) -> int:
 
 def process_pending_orders(dry_run: bool = False):
     """Main processing logic."""
+    from prism_core.us_broker import us_broker
+    if us_broker() == "moomoo":
+        logger.info("Moomoo uses native DAY orders; the KIS pending queue is not processed.")
+        return
     now_kst = datetime.datetime.now(KST)
     today_str = now_kst.strftime('%Y-%m-%d')
 
