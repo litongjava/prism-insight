@@ -90,6 +90,16 @@ servers:
 # so prompts and tool allowlists do not change.  Not listed under `servers`,
 # so it is never launched unless selected.
 search_providers:
+  openai:
+    command: ${PRISM_MCP_PYTHON:-python3}
+    args:
+    - -m
+    - cores.llm.openai_search_mcp_server
+    env:
+      PYTHONPATH: ${PRISM_REPO_ROOT:-.}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_WEB_SEARCH_MODEL: ${OPENAI_WEB_SEARCH_MODEL:-gpt-5.4}
+    read_timeout_seconds: 75
   tavily:
     command: ${PRISM_MCP_PYTHON:-python3}
     args:

@@ -361,8 +361,10 @@ async def prefetch_report_research(market, symbol, reference_date, company_name=
         company_name = " ".join(str(company_name).split())[:150]
         budget = min(60.0, max(0.01, float(config.get("timeout_seconds", 60))))
         cache = Path(_cache_dir) if _cache_dir else ROOT / "runtime/report_research_cache"
+        search_provider = os.getenv("PRISM_WEB_SEARCH_PROVIDER", "perplexity").strip().lower() or "perplexity"
+        search_model = os.getenv("OPENAI_WEB_SEARCH_MODEL", "gpt-5.4") if search_provider == "openai" else None
         key = hashlib.sha256(json.dumps([VERSION, COLLECTOR_VERSION, market, symbol, day, company_name,
-                                        config.get("namespace", "default")]).encode()).hexdigest()
+                                        config.get("namespace", "default"), search_provider, search_model]).encode()).hexdigest()
         cache.mkdir(parents=True, exist_ok=True, mode=0o700)
         path = cache / (key + ".json")
         import fcntl
@@ -394,6 +396,7 @@ async def prefetch_report_research(market, symbol, reference_date, company_name=
             except asyncio.TimeoutError:
                 sources, gaps, calls = [], ["TIME_BUDGET_EXHAUSTED"], None
             packet = _packet(market, symbol, day, sources, gaps, calls)
+            packet["receipt"].update(search_provider=search_provider, search_model=search_model)
             import tempfile
             fd, name = tempfile.mkstemp(dir=cache, prefix=key, suffix=".tmp")
             try:
