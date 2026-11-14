@@ -403,7 +403,8 @@ def render_peer_markdown(rows, *, source, asof, excluded=(), language="ko"):
     large = [p["ticker"] for p in excluded if p.get("reason") == "too_large"]
     names = " · ".join(f"{r['name']}({r['ticker']})" for r in rows[1:])
     if ko:
-        selection = ("Perplexity 후보 + yfinance 검증(미국 상장 보통주·시가총액 3%~10배)" if source == "perplexity"
+        provider_label = "OpenAI" if source == "openai" else "Perplexity"
+        selection = (f"{provider_label} 후보 + yfinance 검증(미국 상장 보통주·시가총액 3%~10배)" if source in {"perplexity", "openai"}
                      else "yfinance 업종 상위 기업")
         lines.append(f"출처: 비교기업 선정 {selection} · 재무·밸류에이션·주가 yfinance · 기준일 {asof.isoformat()}")
         notes = [f"비교 기업: {names}.",
@@ -421,8 +422,9 @@ def render_peer_markdown(rows, *, source, asof, excluded=(), language="ko"):
             notes.append("Forward PER의 '적자'는 예상 이익이 음수여서 배수를 산출하지 않은 경우입니다.")
         notes.append("선정된 비교기업 기준의 참고 자료이며 전체 업종 순위나 매매 조건이 아닙니다.")
     else:
-        selection = ("Perplexity candidates validated with yfinance (US-listed common stock, 3%-10x market cap)"
-                     if source == "perplexity" else "yfinance industry leaders")
+        provider_label = "OpenAI" if source == "openai" else "Perplexity"
+        selection = (f"{provider_label} candidates validated with yfinance (US-listed common stock, 3%-10x market cap)"
+                     if source in {"perplexity", "openai"} else "yfinance industry leaders")
         lines.append(f"Source: peer selection by {selection} · financials, valuation and prices from yfinance · "
                      f"as of {asof.isoformat()}")
         notes = [f"Peers: {names}.",
@@ -459,16 +461,20 @@ def _perplexity_key():
 
 
 async def perplexity_candidates(ticker, company, asof, *, key=None, timeout=_PERPLEXITY_TIMEOUT):
-    """One structured Perplexity call. Returns [] when unavailable."""
-    key = key or _perplexity_key()
-    if not key:
-        return []
+    """One candidate-proposal call, honoring the OpenAI search override."""
     prompt = (f"List 4 to 6 US-listed public companies that are DIRECT competitors of {company} "
               f"(ticker {ticker}) by product or business-segment overlap, as of {asof.isoformat()}. "
               "Exclude customers, suppliers, partners, parents, subsidiaries, ETFs, private companies and "
               "companies not listed on a US exchange. Use the US ticker symbol. "
               'Return JSON only: {"peers": [{"ticker": "...", "name": "...", '
               '"overlap": "<= 15 words on the overlapping product or segment"}]}')
+    if os.getenv("PRISM_WEB_SEARCH_PROVIDER", "").strip().lower() == "openai":
+        from cores.llm.openai_search_mcp_server import Message, search_messages
+        result = await asyncio.wait_for(search_messages([Message(role="user", content=prompt)]), timeout)
+        return parse_candidates(result["answer"], ticker)
+    key = key or _perplexity_key()
+    if not key:
+        return []
     schema = {"type": "object", "properties": {"peers": {"type": "array", "items": {
         "type": "object", "properties": {"ticker": {"type": "string"}, "name": {"type": "string"},
                                          "overlap": {"type": "string"}},
@@ -556,7 +562,7 @@ async def _collect(ticker, company, asof, language, *, candidates_fn, info_fn, s
         return _skip("target_" + listing_issue(target_info))
     infos = await _gather_map(semaphore, info_fn, [c["ticker"] for c in candidates])
     kept, excluded = select_peers(target_info, candidates, infos)
-    source = "perplexity"
+    source = "openai" if os.getenv("PRISM_WEB_SEARCH_PROVIDER", "").strip().lower() == "openai" else "perplexity"
     if len(kept) < 2 and target_info.get("industryKey"):
         source = "industry"
         symbols = await _bounded(semaphore, industry_fn, target_info["industryKey"])
