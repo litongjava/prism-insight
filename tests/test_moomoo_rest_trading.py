@@ -75,3 +75,31 @@ async def test_execution_service_forwards_stable_intent(rest,tmp_path):
     async with service:
         result=await service.execute_buy(ticker='AAPL',buy_amount=200,limit_price=100,intent=intent)
     assert result['success'] and s['posts']==1
+
+
+@pytest.mark.asyncio
+async def test_real_service_rest_context_opens_and_closes_without_opend(rest, monkeypatch):
+    for key, value in {"PRISM_US_BROKER":"moomoo", "MOOMOO_TRANSPORT":"rest",
+                       "MOOMOO_ACCOUNT_ID":"123", "MOOMOO_BUY_AMOUNT_USD":"5000",
+                       "MOOMOO_TRADING_MODE":"demo", "MOOMOO_ALLOW_LIVE":"false"}.items():
+        monkeypatch.setenv(key, value)
+    async with ExecutionService.us() as service:
+        trader = service._active_trader
+        assert isinstance(trader, MoomooRestTrading)
+        assert await __import__('asyncio').to_thread(trader.get_portfolio) == []
+    assert trader._closed
+
+
+def test_market_sell_manager_confirms_only_broker_evidence(rest, monkeypatch):
+    from prism_core.moomoo_rest_trading import manager_module
+    t, state = rest
+    state['positions'] = [dict(symbol='AAPL', market=2, pstn_type=0, qty='2', qty_avbl='2')]
+    monkeypatch.setattr(t, 'is_market_open', lambda: True)
+    assert t._sell('AAPL', quantity=2, paper_intent_id='exit')['success']
+    state['orders'][0].update(status=4, cum_qty='2', avg_fill_price='99')
+    state['positions'] = []
+    async def reconcile(b, *_):
+        return await manager_module.PaperManager(b, t.directory).reconcile('123')
+    result = t._run(reconcile)
+    assert result['intents'][0]['state'] == 'FILLED'
+    assert result['intents'][0]['filled'] == '2' and result['positions'] == []

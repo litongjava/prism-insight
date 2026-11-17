@@ -54,6 +54,11 @@ class MoomooRestTrading(MoomooStockTrading):
         self._intent = threading.local()
         self._validate_account()
 
+    def close(self):
+        # REST calls own short-lived clients; there are no OpenD resources.
+        with self._lock:
+            self._closed = True
+
     @asynccontextmanager
     async def _connection(self):
         async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
