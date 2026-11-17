@@ -167,6 +167,14 @@ async def tick(kind, at):
                               'notifications':db.execute('SELECT state,count(*) FROM notices GROUP BY state').fetchall()}))
 
 
+
+async def report_failure(job, at):
+    date = at.astimezone(ZoneInfo('America/New_York')).date().isoformat()
+    await notice(date + ':' + job + ':runtime-error',
+        'PRISM 模拟交易运行异常：' + job + ' 任务未完成。'
+        '不能视为成交核对或持仓保护成功；系统保留订单状态，不会盲目重下订单。')
+
+
 def main():
     from local_paper_run import configure
     configure()
@@ -187,6 +195,10 @@ def main():
         except Exception:
             # Raw broker/SDK exceptions must not leak private response data.
             print('Paper job failed; no automatic order replay', flush=True)
+            try:
+                asyncio.run(report_failure(args.job, datetime.now(timezone.utc)))
+            except Exception:
+                print('Failure notification unavailable; inspect local job log', flush=True)
             raise SystemExit(1) from None
 
 

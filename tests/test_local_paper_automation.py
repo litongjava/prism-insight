@@ -61,3 +61,14 @@ def test_failed_metadata_refresh_cannot_start_analysis(monkeypatch,tmp_path):
     assert runner.claim('day:morning')
     assert runner.run_process('day:morning','prism-us/us_stock_analysis_orchestrator.py') == 1
     assert len(calls)==1 and calls[0][1].endswith('refresh_us_eligibility.py')
+
+
+@pytest.mark.asyncio
+async def test_runtime_failure_sends_distinct_deduplicated_alert_key(monkeypatch):
+    messages=[]
+    async def notice(key,text):
+        messages.append((key,text))
+    monkeypatch.setattr(runner,'notice',notice)
+    await runner.report_failure('monitor', at('2026-11-17T17:00:00+00:00'))
+    assert messages[0][0]=='2026-11-17:monitor:runtime-error'
+    assert '不能视为成交核对或持仓保护成功' in messages[0][1]
