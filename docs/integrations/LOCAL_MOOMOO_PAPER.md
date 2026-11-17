@@ -64,8 +64,11 @@ message transport. App scopes: `im:message:send_as_bot`, `im:resource` (files),
 moomoo OAuth must grant `quote:read trade:read trade:write`. The official
 2026-10-27 API changelog applies trade scopes to simulated trading too; an old
 quote-only login is not proof of order-write permission. Reauthorize through
-`tools/moomoo_paper.py login` without selecting real accounts. The broker's
-endpoint allowlist remains restricted to `/api/v1.0/sim-trade/`.
+`tools/moomoo_paper.py login`. The consent page can require a brokerage-account
+selection and trade-password verification for trade scopes, even for paper use.
+That expands token account access and requires the account owner's approval;
+it is distinct from enabling real orders. The broker's endpoint allowlist
+remains restricted to `/api/v1.0/sim-trade/`.
 
 ## Scheduling
 
