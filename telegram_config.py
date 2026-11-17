@@ -49,6 +49,10 @@ class TelegramConfig:
         if not self._bot_token:
             self._bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
 
+        from messaging.lark_delivery import enabled
+        if enabled():
+            self._channel_id = os.getenv("LARK_CHAT_ID")
+            self._broadcast_languages = []
         # Load broadcast channel IDs per language
         self._load_broadcast_channels()
     
@@ -123,6 +127,9 @@ class TelegramConfig:
         if not self._use_telegram:
             return True  # Consider configured when intentionally disabled
 
+        from messaging.lark_delivery import enabled
+        if enabled():
+            return bool(self._channel_id and os.getenv("LARK_APP_ID") and os.getenv("LARK_APP_SECRET"))
         return bool(self._channel_id and self._bot_token)
 
     def validate_or_raise(self) -> None:
@@ -142,7 +149,8 @@ class TelegramConfig:
                 "Set environment variable TELEGRAM_CHANNEL_ID or use --no-telegram option."
             )
 
-        if not self._bot_token:
+        from messaging.lark_delivery import enabled
+        if not self._bot_token and not enabled():
             raise ValueError(
                 "Telegram bot token is not configured. "
                 "Set environment variable TELEGRAM_BOT_TOKEN or use --no-telegram option."
@@ -199,7 +207,8 @@ async def send_openai_quota_alert(telegram_config: "TelegramConfig", market: str
         from telegram.request import HTTPXRequest
 
         request = HTTPXRequest(connect_timeout=10.0, read_timeout=10.0)
-        bot = Bot(token=telegram_config.bot_token, request=request)
+        from messaging.lark_delivery import make_bot
+        bot = make_bot(token=telegram_config.bot_token, request=request)
 
         alert_message = (
             f"🚨 [{market}] OpenAI API 크레딧 소진 알림\n\n"
@@ -277,7 +286,8 @@ async def send_buy_analysis_failure_alert(telegram_config: "TelegramConfig", fai
         from telegram.request import HTTPXRequest
 
         request = HTTPXRequest(connect_timeout=10.0, read_timeout=10.0)
-        bot = Bot(token=telegram_config.bot_token, request=request)
+        from messaging.lark_delivery import make_bot
+        bot = make_bot(token=telegram_config.bot_token, request=request)
 
         alert_message = build_buy_analysis_failure_alert(
             failed=failed,
@@ -317,7 +327,8 @@ async def send_market_data_failure_alert(
         from telegram.request import HTTPXRequest
 
         request = HTTPXRequest(connect_timeout=10.0, read_timeout=10.0)
-        bot = Bot(token=telegram_config.bot_token, request=request)
+        from messaging.lark_delivery import make_bot
+        bot = make_bot(token=telegram_config.bot_token, request=request)
         batch_label = "오전" if mode == "morning" else "오후"
         provider = "KIS " if market == "KR" else ""
         alert_message = (

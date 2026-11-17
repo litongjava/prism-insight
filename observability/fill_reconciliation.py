@@ -193,6 +193,9 @@ def reconcile_target(target, rows, *, market, authoritative=True, reason=None) -
             base.update(match_basis="order_no" if len(members) == 1 else "order_no+amend_chain", order_no_matched=True)
         else:
             members = []
+    if not members and target.get("broker") == "MOOMOO":
+        base["reason_code"] = "EXACT_ORDER_NOT_FOUND"
+        return base
     if not members:
         known = {row["order_no"] for row in buys}
         roots = [row for row in buys if not row["orig_order_no"].strip("0") or row["orig_order_no"] not in known]
@@ -211,6 +214,9 @@ def reconcile_target(target, rows, *, market, authoritative=True, reason=None) -
             return base
         members = _chain(buys, roots[0]["order_no"])
         base["match_basis"] = basis
+    if target.get("broker") == "MOOMOO" and any(not row.get("terminal") for row in members):
+        base["reason_code"] = "MOOMOO_ORDER_STILL_OPEN"
+        return base
     root = members[0]  # _chain lists the original order first
     if any(row["filled_qty"] is None for row in members):
         base["reason_code"] = "FILL_QUANTITY_MISSING"
@@ -261,8 +267,9 @@ def build_attributes(target, result, *, market, execution_profile_ref) -> dict[s
         **result,
         "fill_provenance": {
             "schema_version": SCHEMA_VERSION, "status": provenance_status,
-            "reason_code": result.get("reason_code"), "broker": "KIS",
-            "submission_scope": "SINGLE_ACCOUNT", "evidence_source": EVIDENCE_SOURCE[market],
+            "reason_code": result.get("reason_code"), "broker": target.get("broker", "KIS"),
+            "submission_scope": "SINGLE_ACCOUNT", "evidence_source": (
+                "moomoo_order_query" if target.get("broker") == "MOOMOO" else EVIDENCE_SOURCE[market]),
             "confirmed_fill_price": avg if provenance_status in {"CONFIRMED", "PARTIAL"} else None,
             "confirmed_fill_quantity": result.get("filled_qty") if provenance_status in {"CONFIRMED", "PARTIAL"} else None,
             "confirmed_fill_date": result.get("order_date") if provenance_status in {"CONFIRMED", "PARTIAL"} else None,

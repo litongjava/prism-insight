@@ -182,6 +182,18 @@ class ExecutionService:
         db_path: str | Path | None = None,
         intent_store: IntentStore | None = None,
     ) -> "ExecutionService":
+        from prism_core.us_broker import us_broker
+        if us_broker() == "moomoo":
+            if os.getenv("MOOMOO_TRANSPORT", "opend").lower() == "rest":
+                from prism_core.moomoo_rest_trading import AsyncMoomooRestContext as AsyncMoomooTradingContext
+            else:
+                from prism_core.moomoo_trading import AsyncMoomooTradingContext
+            if db_path is not None and intent_store is not None:
+                if Path(db_path).expanduser().resolve() != Path(intent_store.db_path).expanduser().resolve():
+                    raise ValueError("db_path must target the originating IntentStore database")
+            store = intent_store if intent_store is not None else IntentStore(db_path) if db_path is not None else None
+            return cls(AsyncMoomooTradingContext(account_name=account_name),
+                       intent_store=store, stance_market="US")
         try:
             from trading.us_stock_trading import AsyncUSTradingContext
         except ModuleNotFoundError as exc:
@@ -249,18 +261,19 @@ class ExecutionService:
     def _classify_result(cls, result: Any) -> tuple[str, bool, str]:
         if not isinstance(result, dict):
             return "UNKNOWN", False, "KIS"
+        broker = "MOOMOO" if result.get("broker") == "MOOMOO" else "KIS"
         if result.get("outcome_unknown") is True:
-            return "UNKNOWN", False, "KIS"
+            return "UNKNOWN", False, broker
         order_type = str(result.get("order_type") or "").lower()
         order_no = str(result.get("order_no") or "").upper()
         if order_type.startswith("queued_") or order_no.startswith("PENDING-"):
             return "QUEUED", True, "LOCAL_QUEUE"
         if result.get("success") or result.get("partial_success"):
-            return "SUBMITTED", True, "KIS"
+            return "SUBMITTED", True, broker
         message = str(result.get("message") or "").lower()
         if any(marker in message for marker in cls._AMBIGUOUS_FAILURE_MARKERS):
-            return "UNKNOWN", False, "KIS"
-        return "FAILED", False, "KIS"
+            return "UNKNOWN", False, broker
+        return "FAILED", False, broker
 
     @staticmethod
     def _with_intent_metadata(
@@ -286,6 +299,7 @@ class ExecutionService:
         before_order=None,
         **kwargs,
     ):
+        self._validate_provider_intent(intent)
         if intent is None:
             if before_order is not None:
                 await before_order()
@@ -324,6 +338,8 @@ class ExecutionService:
         """Call broker and persist the result for an already-SUBMITTING intent."""
 
         try:
+            if getattr(self._active_trader, "transport", None) == "rest":
+                kwargs["paper_intent_id"] = intent.id
             result = await method(*args, **kwargs)
         except asyncio.CancelledError as exc:
             try:
@@ -333,6 +349,7 @@ class ExecutionService:
                     status="UNKNOWN",
                     accepted=False,
                     response=None,
+                    broker=getattr(self._active_trader, "broker_name", "KIS"),
                     error=exc,
                 )
             except Exception as persistence_error:
@@ -356,6 +373,7 @@ class ExecutionService:
                     status="UNKNOWN",
                     accepted=False,
                     response=None,
+                    broker=getattr(self._active_trader, "broker_name", "KIS"),
                     error=exc,
                 )
             except Exception as persistence_error:
@@ -431,6 +449,7 @@ class ExecutionService:
         reservation: Any,
         side: str,
     ) -> None:
+        self._validate_provider_intent(intent)
         if self._intent_store is None:
             raise RuntimeError(
                 "pre-reserved execution requires the originating IntentStore"
@@ -483,6 +502,7 @@ class ExecutionService:
         before_order=None,
         **kwargs,
     ):
+        self._validate_provider_intent(intent)
         if intent is None:
             if before_order is not None:
                 before_order()
@@ -517,6 +537,8 @@ class ExecutionService:
         **kwargs,
     ):
         try:
+            if getattr(self._active_trader, "transport", None) == "rest":
+                kwargs["paper_intent_id"] = intent.id
             result = method(*args, **kwargs)
         except Exception as exc:
             try:
@@ -525,6 +547,7 @@ class ExecutionService:
                     status="UNKNOWN",
                     accepted=False,
                     response=None,
+                    broker=getattr(self._active_trader, "broker_name", "KIS"),
                     error=exc,
                 )
             except Exception as persistence_error:
@@ -580,6 +603,7 @@ class ExecutionService:
         before_order=None,
         **kwargs,
     ):
+        self._validate_provider_intent(intent)
         if self._intent_store is None:
             raise RuntimeError(
                 "pre-reserved execution requires the originating IntentStore"
@@ -593,6 +617,11 @@ class ExecutionService:
             method, *args, intent=intent, **kwargs
         )
 
+
+    def _validate_provider_intent(self, intent):
+        if getattr(self._active_trader, "broker_name", None) == "MOOMOO":
+            if intent is not None and (intent.market != "US" or intent.account_id != self._active_trader.account_key):
+                raise ValueError("MOOMOO_INTENT_ACCOUNT_MISMATCH")
 
     def _declare_stance_sync(self, side: str, kwargs: dict) -> None:
         """Stance 에 판단을 선언한다. **매매를 막지 않는 것이 최우선이다.**

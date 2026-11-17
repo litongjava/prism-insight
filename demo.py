@@ -36,6 +36,9 @@ analyze_us_stock = us_analysis_module.analyze_us_stock
 
 def check_perplexity_configured() -> bool:
     """Check if Perplexity API key is configured."""
+    import os
+    if os.getenv("PRISM_WEB_SEARCH_PROVIDER") == "openai":
+        return bool(os.getenv("OPENAI_API_KEY"))
     import yaml
     config_path = project_root / "mcp_agent.config.yaml"
     if not config_path.exists():
@@ -73,7 +76,9 @@ async def generate_report(ticker: str, company_name: str, language: str = "ko") 
     Returns:
         tuple: (markdown_path, pdf_path)
     """
-    from report_generator import save_us_report, save_us_pdf_report
+    reports = us_analysis_module._import_root_module_with_root_cores(
+        "demo_root_report_generator", project_root / "report_generator.py")
+    save_us_report, save_us_pdf_report = reports.save_us_report, reports.save_us_pdf_report
 
     # Check if Perplexity is configured for news analysis
     include_news = check_perplexity_configured()

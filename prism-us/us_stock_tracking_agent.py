@@ -805,8 +805,9 @@ class USStockTrackingAgent:
         # Set Telegram bot token
         self.telegram_token = None if self._isolated_runtime is not None else (telegram_token or os.environ.get("TELEGRAM_BOT_TOKEN"))
         self.telegram_bot = None
-        if self.telegram_token:
-            self.telegram_bot = Bot(token=self.telegram_token)
+        from messaging.lark_delivery import enabled as lark_enabled, make_bot
+        if self._isolated_runtime is None and (self.telegram_token or lark_enabled()):
+            self.telegram_bot = make_bot(token=self.telegram_token)
 
     async def initialize(self, language: str = "ko", sector_names: list = None,
                          skip_llm_agent: bool = False):
@@ -1077,6 +1078,9 @@ class USStockTrackingAgent:
         isolated = getattr(self, "_isolated_runtime", None)
         if isolated is not None:
             return isolated.accounts()
+        from prism_core.us_broker import us_broker, moomoo_accounts
+        if us_broker() == "moomoo":
+            return moomoo_accounts()
         ka = _get_kis_auth()
 
         default_mode = str(ka.getEnv().get("default_mode", "demo")).strip().lower()
@@ -1105,6 +1109,8 @@ class USStockTrackingAgent:
         if not account_key:
             return account_name
 
+        if account.get("broker") == "MOOMOO":
+            return f"{account_name} (moomoo:{account.get('mode', 'unknown')}:****)"
         ka = _get_kis_auth()
 
         parts = account_key.split(":")
