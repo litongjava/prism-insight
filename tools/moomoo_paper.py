@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
 
+from trading.moomoo_paper_manager import PaperManager
+
 from trading.moomoo_paper import (
     MoomooError, MoomooPaperBroker, OAuthSession, OutcomeUnknown, REDIRECT_URI,
     STATE_DIR, limit_order,
@@ -88,10 +90,14 @@ def parser() -> argparse.ArgumentParser:
     order.add_argument("--quantity", type=int, required=True)
     order.add_argument("--limit-price", required=True)
     order.add_argument("--submit", action="store_true")
+    order.add_argument("--intent-id", help="Stable unique decision ID; required for submission")
     cancel = commands.add_parser("cancel", help="Preview cancellation; submit only with --submit")
     cancel.add_argument("--account-id", required=True)
     cancel.add_argument("--order-id", required=True)
     cancel.add_argument("--submit", action="store_true")
+    reconcile = commands.add_parser("reconcile", help="Persist broker positions and reconcile exact orders")
+    reconcile.add_argument("--account-id")
+    cancel.add_argument("--intent-id", help="Tracked intent ID; required for submission")
     return result
 
 
@@ -122,10 +128,27 @@ async def run(args) -> None:
                 "scheduled_trading": False,
             }
         elif args.command == "order":
-            result = await broker.submit_limit(args.account_id, args.symbol, args.side,
-                                               args.quantity, args.limit_price)
+            if not args.intent_id:
+                raise MoomooError("--intent-id is required for a durable submission.")
+            manager = PaperManager(broker, args.state_dir)
+            result = await manager.submit(args.account_id, args.intent_id, args.symbol, args.side,
+                                          args.quantity, args.limit_price)
+        elif args.command == "reconcile":
+            result = await PaperManager(broker, args.state_dir).reconcile(args.account_id)
+            result.pop("broker_orders", None)
+            # Account IDs stay in the private ledger, not normal console output.
+            for item in result["intents"]:
+                item.pop("account", None)
         else:
-            result = await broker.cancel(args.account_id, args.order_id)
+            if not args.intent_id:
+                raise MoomooError("--intent-id is required for tracked cancellation.")
+            manager = PaperManager(broker, args.state_dir)
+            rows = manager.rows(args.account_id)
+            if not any(r["intent"] == args.intent_id and r["order_id"] == args.order_id for r in rows):
+                raise MoomooError("Order ID does not match the tracked intent.")
+            result = await manager.cancel(args.account_id, args.intent_id)
+        if isinstance(result, dict):
+            result.pop("account", None)
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
