@@ -47,3 +47,17 @@ async def test_outside_session_monitor_has_no_broker_or_order_calls(monkeypatch)
         pytest.fail('must not contact broker')
     monkeypatch.setattr(runner, 'reconcile', forbidden)
     await runner.tick('monitor', at('2026-11-26T15:00:00+00:00'))
+
+
+def test_failed_metadata_refresh_cannot_start_analysis(monkeypatch,tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr(runner,'STATE',tmp_path)
+    monkeypatch.setenv('PRISM_US_ELIGIBILITY_SOURCE','nasdaq')
+    calls=[]
+    def run(command,**kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=1)
+    monkeypatch.setattr(runner.subprocess,'run',run)
+    assert runner.claim('day:morning')
+    assert runner.run_process('day:morning','prism-us/us_stock_analysis_orchestrator.py') == 1
+    assert len(calls)==1 and calls[0][1].endswith('refresh_us_eligibility.py')

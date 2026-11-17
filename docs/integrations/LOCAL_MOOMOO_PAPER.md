@@ -94,3 +94,21 @@ exposes the Firecrawl scrape tool schema through a separate ephemeral dsb browse
 with public HTTPS checks, serialized browser access and actual page source text.
 It does not reuse the authenticated Lark browser. MCP configuration is local and
 ignored by Git. PDF rendering uses the project's existing Playwright renderer.
+
+
+## Yahoo metadata rate-limit recovery (2026-11-17)
+
+A read-only full-universe smoke retrieved 4,930 current price rows but all 366
+liquid candidates failed Yahoo profile retrieval (`YFRateLimitError`). This is a
+data transport failure, not evidence that no stocks qualify. The local runtime
+can set `PRISM_US_ELIGIBILITY_SOURCE=nasdaq` and an explicit
+`US_ELIGIBILITY_CACHE_PATH`; before each analysis batch, Nasdaq directory and
+screener downloads refresh that existing cache atomically. No trigger, market-cap
+floor, turnover floor, score or BUY/SELL prompt is changed.
+
+The cache admits only directory-confirmed common/ADR shares with matching exchange,
+USD quoted price, positive market cap and nonempty sector/industry. Unverified
+security names, duplicate symbols and incomplete records are never synthesized.
+The existing eligibility consumer still applies all its filters. Capture time is
+recorded; an absent source publication time remains null. Failed refresh prevents
+that batch from starting; exit monitoring remains a separate job.

@@ -118,6 +118,12 @@ def run_process(key, script, *args, timeout=7500):
     log = STATE / (key.replace(':', '-') + '.log')
     with log.open('a') as stream:
         try:
+            if script == 'prism-us/us_stock_analysis_orchestrator.py' and os.getenv('PRISM_US_ELIGIBILITY_SOURCE') == 'nasdaq':
+                prepared = subprocess.run([sys.executable, str(ROOT / 'tools/refresh_us_eligibility.py')],
+                                          cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, timeout=150)
+                if prepared.returncode:
+                    finish(key, 'ERROR', prepared.returncode)
+                    return prepared.returncode
             result = subprocess.run([sys.executable, str(ROOT / script), *args], cwd=ROOT,
                                     stdout=stream, stderr=subprocess.STDOUT, timeout=timeout)
             code = result.returncode
