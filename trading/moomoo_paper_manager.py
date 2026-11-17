@@ -64,6 +64,8 @@ class PaperManager:
                 side TEXT NOT NULL, qty INTEGER NOT NULL, price TEXT NOT NULL,
                 state TEXT NOT NULL, order_id TEXT, filled TEXT, avg_price TEXT,
                 broker_status INTEGER, created REAL NOT NULL, observed REAL)''')
+            if "order_type" not in {r[1] for r in db.execute("PRAGMA table_info(intents)")}:
+                db.execute("ALTER TABLE intents ADD COLUMN order_type INTEGER NOT NULL DEFAULT 1")
             db.execute('''CREATE TABLE IF NOT EXISTS snapshots (
                 account TEXT PRIMARY KEY, observed REAL NOT NULL, payload TEXT NOT NULL)''')
 
@@ -126,8 +128,8 @@ class PaperManager:
                 status = row.get("status")
                 if (row.get("symbol") != intent["symbol"] or row.get("market") != 2
                         or row.get("side") != (1 if intent["side"] == "BUY" else 2)
-                        or row.get("order_type") != 1 or qty != intent["qty"]
-                        or decimal(row.get("price")) != Decimal(intent["price"])
+                        or row.get("order_type") != intent["order_type"] or qty != intent["qty"]
+                        or (intent["order_type"] == 1 and decimal(row.get("price")) != Decimal(intent["price"]))
                         or filled > qty or filled != int(filled)
                         or type(status) is not int or status not in range(1, 8)
                         or (status == 4 and filled != qty)
@@ -153,8 +155,13 @@ class PaperManager:
         with self.locked():
             return await self._reconcile(await self.broker.select_account(account))
 
-    async def submit(self, account, intent, symbol, side, qty, price):
-        body = limit_order(symbol, side, qty, price)
+    async def submit(self, account, intent, symbol, side, qty, price, *, market_sell=False):
+        if market_sell and side != "SELL":
+            raise MoomooError("Market buys are not supported.")
+        body = limit_order(symbol, side, qty, "1" if market_sell else price)
+        if market_sell:
+            body.update(price="0", order_type=3)
+            price = "0"
         symbol = body["symbol"][3:]
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", intent):
             raise MoomooError("A stable intent ID (1-64 letters/digits/_/-) is required.")
@@ -166,7 +173,7 @@ class PaperManager:
                 existing = db.execute("SELECT * FROM intents WHERE intent=?", (intent,)).fetchone()
             if existing:
                 if (existing["account"], existing["symbol"], existing["side"], existing["qty"],
-                    Decimal(existing["price"])) != (account, symbol, side, qty, Decimal(price)):
+                    Decimal(existing["price"]), existing["order_type"]) != (account, symbol, side, qty, Decimal(price), body["order_type"]):
                     raise MoomooError("Intent ID already belongs to a different order.")
                 return dict(existing)
             status = await self._reconcile(account)
@@ -186,12 +193,15 @@ class PaperManager:
                 if holding is None or holding["sellable_quantity"] < qty:
                     raise MoomooError("Sell exceeds broker-confirmed available long shares.")
             with self.connect() as db:
-                db.execute('''INSERT INTO intents(intent,account,symbol,side,qty,price,state,created)
-                              VALUES (?,?,?,?,?,?,?,?)''',
-                           (intent, account, symbol, side, qty, body["price"], "SENDING", time.time()))
+                db.execute('''INSERT INTO intents(intent,account,symbol,side,qty,price,state,created,order_type)
+                              VALUES (?,?,?,?,?,?,?,?,?)''',
+                           (intent, account, symbol, side, qty, body["price"], "SENDING", time.time(), body["order_type"]))
             # Persist before network I/O. A crash/cancellation leaves SENDING, never replayable.
             try:
-                ack = await self.broker.submit_limit(account, symbol, side, qty, price, remark="PRISM:" + intent)
+                if market_sell:
+                    ack = await self.broker.submit_market_sell(account, symbol, qty, remark="PRISM:" + intent)
+                else:
+                    ack = await self.broker.submit_limit(account, symbol, side, qty, price, remark="PRISM:" + intent)
             except OutcomeUnknown:
                 with self.connect() as db:
                     db.execute("UPDATE intents SET state='UNKNOWN' WHERE intent=?", (intent,))

@@ -310,6 +310,20 @@ class MoomooPaperBroker:
         return {"environment": "SIMULATE", "submission": "ACKNOWLEDGED",
                 "order_id": order_id, "filled_quantity": None, "fill_status": "MISSING"}
 
+    async def submit_market_sell(self, account_id: str, symbol: str, quantity: int, *, remark: str) -> dict:
+        body = limit_order(symbol, "SELL", quantity, "1")
+        body.update(order_type=3, text=remark)
+        body.pop("price")
+        if len(remark.encode()) > 100:
+            raise MoomooError("Invalid order remark.")
+        account = await self.select_account(account_id)
+        result = await self._request("POST", account + "/orders", json=body)
+        try:
+            order_id = identifier(result.get("order_id"))
+        except MoomooError:
+            raise OutcomeUnknown("Paper sell has no order ID; reconcile before retrying.") from None
+        return {"order_id": order_id, "filled_quantity": None, "submission": "ACKNOWLEDGED"}
+
     async def cancel(self, account_id: str, order_id: str) -> dict:
         identifier(order_id)
         account = await self.select_account(account_id)

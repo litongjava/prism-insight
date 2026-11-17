@@ -184,7 +184,10 @@ class ExecutionService:
     ) -> "ExecutionService":
         from prism_core.us_broker import us_broker
         if us_broker() == "moomoo":
-            from prism_core.moomoo_trading import AsyncMoomooTradingContext
+            if os.getenv("MOOMOO_TRANSPORT", "opend").lower() == "rest":
+                from prism_core.moomoo_rest_trading import AsyncMoomooRestContext as AsyncMoomooTradingContext
+            else:
+                from prism_core.moomoo_trading import AsyncMoomooTradingContext
             if db_path is not None and intent_store is not None:
                 if Path(db_path).expanduser().resolve() != Path(intent_store.db_path).expanduser().resolve():
                     raise ValueError("db_path must target the originating IntentStore database")
@@ -335,6 +338,8 @@ class ExecutionService:
         """Call broker and persist the result for an already-SUBMITTING intent."""
 
         try:
+            if getattr(self._active_trader, "transport", None) == "rest":
+                kwargs["paper_intent_id"] = intent.id
             result = await method(*args, **kwargs)
         except asyncio.CancelledError as exc:
             try:
@@ -532,6 +537,8 @@ class ExecutionService:
         **kwargs,
     ):
         try:
+            if getattr(self._active_trader, "transport", None) == "rest":
+                kwargs["paper_intent_id"] = intent.id
             result = method(*args, **kwargs)
         except Exception as exc:
             try:

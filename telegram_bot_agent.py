@@ -29,6 +29,11 @@ class TelegramBotAgent:
         Args:
             token (str, optional): Telegram bot token
         """
+        from messaging.lark_delivery import enabled, make_bot
+        if enabled():
+            self.token = None
+            self.bot = make_bot()
+            return
         self.token = token or os.environ.get("TELEGRAM_BOT_TOKEN")
         if not self.token:
             raise ValueError("Telegram bot token is required. Provide via environment variable or parameter.")
@@ -78,6 +83,10 @@ class TelegramBotAgent:
                 **resend,
             )
             logger.info(f"Message sent successfully ({parse_mode}): {chat_id}")
+            # Telegram-only metadata must not publish fabricated Lark links.
+            from messaging.lark_delivery import enabled as lark_enabled
+            if lark_enabled():
+                return True
             # Firebase Bridge - save metadata + push notification
             try:
                 from firebase_bridge import notify
@@ -157,6 +166,9 @@ class TelegramBotAgent:
                     connect_timeout=30,
                 )
             logger.info(f"File sent successfully: {document_path}")
+            from messaging.lark_delivery import enabled as lark_enabled
+            if lark_enabled():
+                return True
             try:
                 from firebase_bridge import notify
                 telegram_link = f"https://t.me/{os.environ.get('TELEGRAM_CHANNEL_USERNAME', 'stock_ai_agent')}/{result.message_id}"

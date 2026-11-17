@@ -805,8 +805,9 @@ class USStockTrackingAgent:
         # Set Telegram bot token
         self.telegram_token = None if self._isolated_runtime is not None else (telegram_token or os.environ.get("TELEGRAM_BOT_TOKEN"))
         self.telegram_bot = None
-        if self.telegram_token:
-            self.telegram_bot = Bot(token=self.telegram_token)
+        from messaging.lark_delivery import enabled as lark_enabled, make_bot
+        if self._isolated_runtime is None and (self.telegram_token or lark_enabled()):
+            self.telegram_bot = make_bot(token=self.telegram_token)
 
     async def initialize(self, language: str = "ko", sector_names: list = None,
                          skip_llm_agent: bool = False):
