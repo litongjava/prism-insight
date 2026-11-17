@@ -52,6 +52,22 @@ def test_ambiguous_symbols_fail_closed():
 
 
 def test_real_us_cache_consumer_avoids_failed_yahoo_profiles(monkeypatch, tmp_path):
+    # KR and US both own `cores`. Run the real US consumer in a fresh pytest
+    # process instead of depending on the parent suite's import order.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    if os.getenv("PRISM_TEST_NASDAQ_US_CHILD") != "1":
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", __file__ + "::" +
+             "test_real_us_cache_consumer_avoids_failed_yahoo_profiles", "-q"],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "PRISM_TEST_NASDAQ_US_CHILD":"1", "PRISM_DISABLE_SIGNAL_PUBLISH":"1"},
+            capture_output=True, text=True, timeout=45,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return
     from test_us_eligibility_metadata_cache import _run
     cache = build(*fixtures())
     diag, fetched, saved, kept = _run(monkeypatch, tmp_path,
