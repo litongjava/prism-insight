@@ -180,7 +180,7 @@ def test_oauth_pkce_callback_and_private_storage(tmp_path):
             auth = OAuthSession(client, tmp_path)
             url = await auth.begin_login()
             params = parse_qs(urlsplit(url).query)
-            assert params["scope"] == ["quote:read"]
+            assert params["scope"] == ["quote:read trade:read trade:write"]
             pending = read_private(tmp_path / "pending-login.json")
             verifier.append(pending["verifier"])
             challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier[0].encode()).digest()).rstrip(b"=").decode()

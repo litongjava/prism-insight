@@ -125,9 +125,9 @@ class OAuthSession:
             "client_id": registration["client_id"], "redirect_uri": REDIRECT_URI,
             "response_type": "code", "code_challenge_method": "S256",
             "code_challenge": challenge, "state": state,
-            # Verified for paper account/position/order reads without real-account grants.
-            # Paper writes still require separate broker-side verification.
-            "scope": "quote:read",
+            # Since 2026-10-27, simulated trading also uses trade read/write
+            # scopes. Broker methods below remain restricted to sim-trade URLs.
+            "scope": "quote:read trade:read trade:write",
         })
 
     async def finish_login(self, callback: str) -> None:

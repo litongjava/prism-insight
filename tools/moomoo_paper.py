@@ -63,8 +63,8 @@ async def login(auth: OAuthSession) -> None:
         url = await auth.begin_login()
         print("Open this official moomoo URL in your browser:", flush=True)
         print(url, flush=True)
-        print("For initial paper setup: keep only Market Data; deselect Watchlists, Accounts & Orders, "
-              "and Trade Execution. Do not select real accounts.", flush=True)
+        print("Allow Market Data, Accounts & Orders and Trade Execution for simulated trading. "
+              "Do not select real accounts; this client only calls sim-trade endpoints.", flush=True)
         print("If your browser is on another computer, forward port 60355 to this host first.", flush=True)
         print("Waiting up to 20 minutes for authorization; no orders will be sent.", flush=True)
         try:

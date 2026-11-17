@@ -61,6 +61,12 @@ not retried automatically. The CLI is useful for setup but is not the runtime
 message transport. App scopes: `im:message:send_as_bot`, `im:resource` (files),
 `im:chat:readonly` (setup lookup). Add the published bot to the group.
 
+moomoo OAuth must grant `quote:read trade:read trade:write`. The official
+2026-10-27 API changelog applies trade scopes to simulated trading too; an old
+quote-only login is not proof of order-write permission. Reauthorize through
+`tools/moomoo_paper.py login` without selecting real accounts. The broker's
+endpoint allowlist remains restricted to `/api/v1.0/sim-trade/`.
+
 ## Scheduling
 
 After validation, preserve existing crontab entries and add invocations of
