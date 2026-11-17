@@ -125,7 +125,9 @@ class OAuthSession:
             "client_id": registration["client_id"], "redirect_uri": REDIRECT_URI,
             "response_type": "code", "code_challenge_method": "S256",
             "code_challenge": challenge, "state": state,
-            "scope": "trade:read trade:write",
+            # Verified for paper account/position/order reads without real-account grants.
+            # Paper writes still require separate broker-side verification.
+            "scope": "quote:read",
         })
 
     async def finish_login(self, callback: str) -> None:
