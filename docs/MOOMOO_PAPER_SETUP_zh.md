@@ -12,6 +12,7 @@ Python 3.10+；依赖沿用项目已有的 `httpx>=0.27.0`。
   `account_type=1` 的美股个人模拟账户。多个账户必须明确选择，空列表保持未知。
 - 订单只支持股票/ETF 代码、整数股、明确限价和常规交易时段；不支持期权、其他市场或实盘。
 - 接受订单不代表成交。提交超时或响应异常标记 `outcome_unknown`，不自动重试。
+- 用户已指定单次买入名义金额上限 5,000 美元；REST 下单入口强制执行。
 - KIS 的筛选、买卖规则、定时任务和资金配置不变；不写 KIS 持仓表，不发送 Telegram 或交易信号。
 - **这是独立模拟接口接入，还未把 PRISM 自动选股/持仓管理接到 moomoo。**
   后续自动化需要 moomoo 独立账本、订单成交核对及完整退出链路；不能仅替换 KIS 工厂函数。
@@ -65,16 +66,17 @@ OAuth state 和 PKCE 校验后交换令牌，过期时刷新，刷新时跨进�
   --account-id PAPER_ACCOUNT_ID --symbol SPY --side BUY --quantity 1 --limit-price 1
 ```
 
-这是演示参数，不是交易建议。默认只预览，不联网。仅在确实需要提交模拟订单时加 `--submit`。
-撤单使用 `cancel --account-id ... --order-id ...`，同样默认预览，`--submit` 才提交。
+这是演示参数，不是交易建议。默认只预览，不联网。实际提交必须同时提供
+`--submit --intent-id <稳定且唯一的决策编号>`，重试同一意图编号只返回已记录状态，不重发。
+撤单使用 `cancel --account-id ... --order-id ...`，同样默认预览，实际提交需要 `--submit --intent-id <对应决策编号>`；订单编号必须与账本一致。
 订单和撤单完成后用 `status --details` 核对实际状态；不将响应成功当作成交。
-发生 `outcome_unknown` 时先核对当日订单；跨交易日需在 moomoo App 中查看历史记录，
-本入口暂不提供历史订单查询，不因当日列表为空就重新下单。
+发生 `outcome_unknown` 时执行 `reconcile`，同时核对当日与分页历史订单。
+缺失证据时保持未确认并阻止账户继续下单，不因列表为空就重新下单。
 
 ## 验证与状态
 
 ```bash
-python -m pytest tests/test_moomoo_paper.py -q
+python -m pytest tests/test_moomoo_paper.py tests/test_moomoo_paper_manager.py -q
 ```
 
 测试使用模拟 HTTP 响应，覆盖模拟账户隔离、非法订单、未知提交、不重试、
@@ -102,3 +104,31 @@ python -m pytest tests/test_moomoo_paper.py -q
 [模拟账户](https://open.moomoo.com/api/sim-trade/account-list)、
 [模拟下单](https://open.moomoo.com/api/sim-trade/input-order)、
 [当日订单](https://open.moomoo.com/api/sim-trade/order-list)。
+
+
+## REST 订单生命周期与持仓管理（2026-11-17）
+
+`trading/moomoo_paper_manager.py` 为现有 PRISM 模拟 CLI 提供独立的持久化管理层。
+执行 `python tools/moomoo_paper.py reconcile` 获取券商当前持仓、可卖数量，
+并通过精确订单编号核对累计成交量、成交均价和终态。没有订单编号的未知提交，
+仅允许通过 `PRISM:<intent-id>` 精确备注与订单内容一起匹配。
+历史订单按官方游标分页，最多 20 页；缺页、重复游标或证据冲突均报错。
+
+账本位于授权目录下 `paper-ledger.sqlite3`，权限 0600；不混用 KIS 数据库。
+下单前写入 SENDING，随后为 ACKNOWLEDGED；成交状态只有券商证据才能更新。
+退出卖单必须有足够的券商可卖整股，禁止凭本地推测卖空。
+同一股票存在外部或本系统未完成订单时阻止新单；未知提交阻止整个账户的新单。
+撤单请求持久化且不自动重发，部分成交后撤单仍保留已成交数量。
+持仓快照独立于订单状态，不以持仓变化推定某一订单成交。
+
+本阶段提供可调用的管理类和命令入口，**尚未接入自动选股/止损定时调用端**。
+不把 SDK/OpenD 的账户编号、枚举或凭据直接用于 REST。
+不宣称已成交、已运行定时交易或已部署到 main；真实下单权限仍未通过订单验证。
+
+本次实施检查记录：
+1. 类型：REST 执行和证据管理；基线是独立 paper CLI，无策略改动。
+2. 假设：无收益假设；方向和 5,000 美元预算均来自用户明确指令。
+3. 路径：CLI → PaperManager → paper broker → 官方 sim-trade；自动选股调用端尚未接线。
+4. 反例：超预算、重复意图、外部挂单、超卖、未知提交、成交字段缺失与历史分页失败。
+5. 停止条件：证据缺失保持未知；不重发；对账失败不更新账本，不启动自动交易。
+6. 当前判定：本地开发与只读账户验证；不是策略晋升或实盘部署。

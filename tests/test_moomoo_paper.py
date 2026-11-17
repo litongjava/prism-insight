@@ -287,3 +287,30 @@ def test_credential_file_permissions_enforced(tmp_path):
     path.chmod(0o644)
     with pytest.raises(MoomooError, match="chmod 600"):
         read_private(path)
+
+
+def test_history_paginates_using_top_level_metadata(tmp_path):
+    cursors = []
+    def handler(req):
+        if req.url.path.endswith('/accounts'):
+            return ok(ACCOUNTS)
+        assert req.url.path.endswith('/history-orders')
+        cursors.append(req.url.params.get('next_key'))
+        return httpx.Response(200, json={'ret_code': 0, 'data': {'orders': []},
+            'pagination': {'has_more': len(cursors) == 1, 'next_key': 'next'}})
+    assert broker_case(tmp_path, handler, lambda b: b.history_orders('123', 1)) == []
+    assert cursors == [None, 'next']
+
+
+def test_history_missing_pagination_is_not_empty_success(tmp_path):
+    def handler(req):
+        return ok(ACCOUNTS if req.url.path.endswith('/accounts') else {'orders': []})
+    with pytest.raises(MoomooError, match='incomplete'):
+        broker_case(tmp_path, handler, lambda b: b.history_orders('123', 1))
+
+
+def test_buy_budget_enforced_at_broker_boundary(tmp_path):
+    def handler(req):
+        pytest.fail('Over-budget order must not reach network')
+    with pytest.raises(MoomooError, match='5000'):
+        broker_case(tmp_path, handler, lambda b: b.submit_limit('123', 'SPY', 'BUY', 51, '100'))

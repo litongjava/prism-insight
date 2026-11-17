@@ -221,7 +221,7 @@ class MoomooPaperBroker:
         self.auth = auth
 
     async def _request(self, method: str, resource: str, **kwargs) -> dict:
-        if not re.fullmatch(r"accounts|[0-9]+/(?:cash-info|positions|orders(?:/[0-9]+/cancel)?)", resource):
+        if not re.fullmatch(r"accounts|[0-9]+/(?:cash-info|positions|history-orders|orders(?:/[0-9]+/cancel)?)", resource):
             raise MoomooError("Only paper trading endpoints are allowed.")
         token = await self.auth.access_token()
         writing = method == "POST"
@@ -238,6 +238,8 @@ class MoomooPaperBroker:
                 raise MoomooError(f"Paper API rejected request (code {payload['ret_code']}).")
             if not isinstance(payload.get("data"), dict):
                 raise ValueError
+            if resource.endswith("/history-orders"):
+                return {**payload["data"], "pagination": payload.get("pagination")}
             return payload["data"]
         except (httpx.HTTPError, ValueError):
             if writing:
@@ -258,6 +260,28 @@ class MoomooPaperBroker:
             raise MoomooError("Select exactly one US personal paper account; create one in moomoo if absent.")
         return identifier(rows[0].get("account_id"))
 
+    async def history_orders(self, account_id: str, since: float) -> list[dict]:
+        account = await self.select_account(account_id)
+        params = {"market": 100, "page_size": 50, "time_begin": int(since * 1000000),
+                  "time_end": int(time.time() * 1000000)}
+        rows, seen_cursors = [], set()
+        for _ in range(20):
+            page = await self._request("GET", account + "/history-orders", params=params)
+            pagination = page.get("pagination")
+            items = page.get("orders")
+            if (not isinstance(items, list) or any(not isinstance(r, dict) for r in items)
+                    or not isinstance(pagination, dict) or type(pagination.get("has_more")) is not bool):
+                raise MoomooError("Historical order evidence is incomplete.")
+            rows.extend(items)
+            if not pagination["has_more"]:
+                return rows
+            cursor = pagination.get("next_key")
+            if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                raise MoomooError("Historical order pagination is invalid.")
+            seen_cursors.add(cursor)
+            params["next_key"] = cursor
+        raise MoomooError("Historical order pagination limit reached; narrow the reconciliation range.")
+
     async def snapshot(self, account_id: str | None = None) -> dict:
         account = await self.select_account(account_id)
         cash = await self._request("GET", account + "/cash-info")
@@ -269,8 +293,14 @@ class MoomooPaperBroker:
                 "account_id": account, "cash": cash, **positions, **orders}
 
     async def submit_limit(self, account_id: str, symbol: str, side: str,
-                           quantity: int, price: str) -> dict:
+                           quantity: int, price: str, *, remark: str = "") -> dict:
         body = limit_order(symbol, side, quantity, price)
+        if side == "BUY" and Decimal(body["qty"]) * Decimal(body["price"]) > Decimal("5000"):
+            raise MoomooError("Paper buy exceeds the authorized USD 5000 limit.")
+        if not isinstance(remark, str) or len(remark.encode()) > 100:
+            raise MoomooError("Invalid order remark.")
+        if remark:
+            body["text"] = remark
         account = await self.select_account(account_id)
         result = await self._request("POST", account + "/orders", json=body)
         try:

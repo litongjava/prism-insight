@@ -34,7 +34,7 @@ jobs:
         run: python -m pip install pytest pytest-asyncio
 
       - name: moomoo paper broker boundary and OAuth regression
-        run: python -m pytest tests/test_moomoo_paper.py -q
+        run: python -m pytest tests/test_moomoo_paper.py tests/test_moomoo_paper_manager.py -q
 
       - name: KR/US provider-shape batch integration gate
         env:
