@@ -371,7 +371,7 @@ class StockAnalysisOrchestrator:
 
             # Step 2: Run LLM agent with perplexity for qualitative analysis
             from mcp_agent.app import MCPApp
-            from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
+            from cores.llm.openai_responses_llm import OpenAIResponsesLLM as OpenAIAugmentedLLM
             from cores.agents.macro_intelligence_agent import create_macro_intelligence_agent
 
             macro_app = MCPApp(name="macro_intelligence")

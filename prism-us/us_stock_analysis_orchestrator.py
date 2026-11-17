@@ -410,7 +410,11 @@ class USStockAnalysisOrchestrator:
 
             # Step 2: Run LLM agent with perplexity for qualitative analysis
             from mcp_agent.app import MCPApp
-            from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
+            # Use the same Responses transport as reports and trading. The pinned
+            # MCP Chat Completions client sends obsolete max_tokens for GPT-6.
+            OpenAIAugmentedLLM = _import_from_main_cores(
+                "prism_root_macro_responses_llm", "cores/llm/openai_responses_llm.py"
+            ).OpenAIResponsesLLM
             from cores.agents.macro_intelligence_agent import create_us_macro_intelligence_agent
 
             macro_runtime = _import_from_main_cores(
