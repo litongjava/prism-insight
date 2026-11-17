@@ -18,7 +18,7 @@ from report_model_config import REPORT_AUX_EFFORT, REPORT_AUX_MODEL
 from mcp_agent.agents.agent import Agent
 from mcp_agent.app import MCPApp
 from mcp_agent.workflows.llm.augmented_llm import RequestParams
-from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
+from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM as _OpenAIAugmentedLLM
 from mcp_agent.workflows.evaluator_optimizer.evaluator_optimizer import (
     EvaluatorOptimizerLLM,
     QualityRating,
@@ -30,6 +30,20 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class OpenAIAugmentedLLM(_OpenAIAugmentedLLM):
+    """Keep the tool-free summary/evaluator workflow compatible with GPT-6.
+
+    The pinned MCP client recognizes reasoning models only through GPT-5.
+    Both free-text generation and structured evaluation must use completion
+    token limits for GPT-6; neither of these summary agents exposes tools.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        original = self._reasoning
+        self._reasoning = lambda model: bool(model and model.startswith("gpt-6")) or original(model)
 
 # Add parent directory to path for imports
 import sys
